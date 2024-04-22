@@ -17,6 +17,35 @@ typedef uint32_t BlobIndex;
 typedef uint32_t StringIndex;
 typedef uint32_t GUIDIndex;
 
+// II.23.2 Blobs and signatures
+enum class SignatureKind: uint8_t {
+  // differs from a MethodDefSig only for VARARG calls
+  MethodRefSig,
+  MethodDefSig,
+  FieldSig,
+  PropertySig,
+  LocalVarSig,
+  TypeSpec,
+  MethodSpec
+};
+
+enum class SignatureAbbreviation: uint8_t {
+  DEFAULT = 0x00,
+  C = 0x01,
+  STDCALL = 0x02,
+  THISCALL = 0x03,
+  FASTCALL = 0x04,
+  VARARG = 0x05,
+  FIELD = 0x06,
+  LOCAL_VAR = 0x07,
+  PROPERTY_NOT_THIS = 0x08,
+  GENERIC = 0x10,
+  HASTHIS = 0x20,
+  EXPLICITTHIS = 0x40,
+  SENTINEL = 0x41
+};
+
+
 template<uint8_t bitsNum, TableIndex... tableIndexes>
 struct CodedIndex {
 public:
@@ -26,31 +55,30 @@ public:
   CodedIndex(uint32_t codedIndex): _codedIndex(codedIndex) {};
   CodedIndex(): _codedIndex(0) {};
 
-  TableIndex GetTableIndex() {
-    return GetTableIndex(_codedIndex & _mask, 0, tableIndexes...);
+  TableIndex GetTableIndex() const {
+    return MatchTableIndex(0, tableIndexes...);
   }
 
-  uint32_t GetRowIndex() {
+  int GetRowIndex() const {
     return _codedIndex >> bitsNum;
   }
 
 private:
-  uint32_t _codedIndex;
   constexpr static uint32_t _mask = ((uint32_t)1 << bitsNum) - 1;
-
+  uint32_t _codedIndex;
   template<class TFirst>
-  TableIndex GetTableIndex(uint32_t m, TFirst first) {
+  TableIndex MatchTableIndex(uint32_t currMask, TFirst index) const {
     // Overflow.
-    if (m == _mask)
+    if (currMask > _mask)
       throw "Overflow";
-    return m == (_codedIndex & _mask) ? first : TableIndexInvalid;
+    return currMask == (_codedIndex & _mask) ? index : TableIndexInvalid;
   }
 
   template<class TFirst, class... TOther>
-  TableIndex GetTableIndex(uint32_t m, TFirst first, TOther... other) {
-    if (GetTableIndex(m, first) != TableIndexInvalid)
-      return first;
-    return GetTableIndex(m + 1, other...);
+  TableIndex MatchTableIndex(uint32_t fromMask, TFirst firstIndex, TOther... otherIndexes) const {
+    if (MatchTableIndex(fromMask, firstIndex) != TableIndexInvalid)
+      return firstIndex;
+    return MatchTableIndex(fromMask + 1, otherIndexes...);
   }
 };
 
@@ -264,7 +292,7 @@ enum class MethodAttributes: uint32_t {
   MemberAccessMask = 0x0007,
   CompilerControlled = 0x0000,
   Private = 0x0001,
-  FAmANDAssem = 0x0002,
+  FamANDAssem = 0x0002,
   Assem = 0x0003,
   Family = 0x0004,
   FamORAssem = 0x0005,
@@ -390,7 +418,7 @@ enum class TypeAttributes: uint32_t {
 
 // II.23.1.16 Element types used in signatures
 // The following table lists the values for ELEMENT_TYPE constants. These are used extensively in metadata signature blobs – see §II.23.2
-enum class ELEMENT_TYPE {
+enum class ELEMENT_TYPE: uint8_t {
   END = 0x00,
   VOID = 0x01,
   BOOLEAN = 0x02,
@@ -412,7 +440,7 @@ enum class ELEMENT_TYPE {
   CLASS = 0x12,
   VAR = 0x13,
   ARRAY = 0x14,
-  GERERICINST = 0x15,
+  GENERICINST = 0x15,
   TYPEDBYREF = 0x16,
   I = 0x18,
   U = 0x19,
@@ -484,7 +512,7 @@ struct AssemblyRefOSTableRow {
   // OSMinorVersion (a 4-byte constant)
   uint32_t OSMinorVersion;
   // AssemblyRef (an index into the AssemblyRef table)
-  TableIndex AssemblyRef;
+  TableRowIndex AssemblyRef;
 };
 
 // II.22.7 AssemblyRefProcessor : 0x24
@@ -492,7 +520,7 @@ struct AssemblyRefProcessorTableRow {
   // Processor (a 4-byte constant)
   uint32_t Processor;
   // AssemblyRef (an index into the AssemblyRef table)
-  TableIndex AssemblyRef;
+  TableRowIndex AssemblyRef;
 };
 
 // II.22.8 ClassLayout : 0x0F
@@ -502,7 +530,7 @@ struct ClassLayoutTableRow {
   // ClassSize (a 4-byte constant)
   uint32_t ClassSize;
   // Parent (an index into the TypeDef table)
-  TableIndex Parent;
+  TableRowIndex Parent;
 };
 
 // II.22.9 Constant : 0x0B
@@ -541,12 +569,12 @@ struct DeclSecurityTableRow {
 // II.22.12 EventMap : 0x12
 struct EventMapTableRow {
   // Parent (an index into the TypeDef table)
-  TableIndex Parent;
+  TableRowIndex Parent;
   // EventList (an index into the Event table). It marks the first of a contiguous run of Events owned by this Type. That run continues to the smaller of:
   //  o the last row of the Event table
   //  o the next run of Events, found by inspecting the EventList of the next row
   //    in the EventMap table
-  TableIndex EventList;
+  TableRowIndex EventList;
 };
 
 // II.22.13 Event : 0x14
@@ -567,7 +595,7 @@ struct ExportedTypeTableRow {
   // This column is used as a hint only. If the entry in the target TypeDef table matches the TypeName and TypeNamespace entries in this table,
   // resolution has succeeded. But if there is a mismatch, the CLI shall fall back to a search of the target TypeDef table.
   // Ignored and should be zero if Flags has IsTypeForwarder set.
-  TableIndex TypeDefId;
+  TableRowIndex TypeDefId;
   StringIndex TypeName;
   StringIndex TypeNamespace;
   // Implementation. This is an index (more precisely, an Implementation (§II.24.2.6) coded index) into either of the following tables:
@@ -591,7 +619,7 @@ struct FieldLayoutTableRow {
   // Offset (a 4-byte constant)
   uint32_t Offset;
   // Field (an index into the Field table)
-  TableIndex Field;
+  TableRowIndex Field;
 };
 
 // II.22.17 FieldMarshal : 0x0D
@@ -608,7 +636,7 @@ struct FieldRVATableRow {
   // RVA (a 4-byte constant)
   uint32_t RVA;
   // Field (an index into Field table)
-  TableIndex Field;
+  TableRowIndex Field;
 };
 
 // II.22.19 File : 0x26
@@ -637,7 +665,7 @@ struct GenericParamTableRow {
 struct GenericParamConstraintTableRow {
   // Owner (an index into the GenericParam table, specifying to which generic
   // parameter this row refers)
-  TableIndex Owner;
+  TableRowIndex Owner;
   // Constraint (an index into the TypeDef, TypeRef, or TypeSpec tables, specifying from which class this generic parameter is constrained to derive;
   // or which interface this generic parameter is constrained to implement; more precisely, a TypeDefOrRef (§II.24.2.6) coded index)
   TypeDefOrRefCodedIndex Constraint;
@@ -653,13 +681,13 @@ struct ImplMapTableRow {
   MemberForwardedCodedIndex MemberForwarded;
   StringIndex ImportName;
   // ImportScope (an index into the ModuleRef table)
-  TableIndex ImportScope;
+  TableRowIndex ImportScope;
 };
 
 // II.22.23 InterfaceImpl : 0x09
 struct InterfaceImplTableRow {
   // Class (an index into the TypeDef table)
-  TableIndex Class;
+  TableRowIndex Class;
   // Interface (an index into the TypeDef, TypeRef, or TypeSpec table; more precisely, a TypeDefOrRef (§II.24.2.6) coded index)
   TypeDefOrRefCodedIndex Interface;
 };
@@ -696,13 +724,13 @@ struct MethodDefTableRow {
   //  o the last row of the Param table
   //  o the next run of Parameters, found by inspecting the ParamList of the next
   //    row in the MethodDef table
-  TableIndex ParamList;
+  TableRowIndex ParamList;
 };
 
 // II.22.27 MethodImpl : 0x19
 struct MethodImplTableRow {
   // Class (an index into the TypeDef table)
-  TableIndex Class;
+  TableRowIndex Class;
   // MethodBody (an index into the MethodDef or MemberRef table; more precisely, a
   // MethodDefOrRef (§II.24.2.6) coded index)
   MethodDefOrRefCodedIndex MethodBody;
@@ -716,7 +744,7 @@ struct MethodSemanticsTableRow {
   // Semantics (a 2-byte bitmask of type MethodSemanticsAttributes, §II.23.1.12)
   uint16_t Semantics;
   // Method (an index into the MethodDef table)
-  TableIndex Method;
+  TableRowIndex Method;
   // Association (an index into the Event or Property table; more precisely, a HasSemantics (§II.24.2.6) coded index)
   HasSemanticsCodedIndex Association;
 };
@@ -768,9 +796,9 @@ struct ModuleRefTableRow {
 // II.22.32 NestedClass : 0x29
 struct NestedClassTableRow {
   // NestedClass (an index into the TypeDef table)
-  TableIndex NestedClass;
+  TableRowIndex NestedClass;
   // EnclosingClass (an index into the TypeDef table)
-  TableIndex EnclosingClass;
+  TableRowIndex EnclosingClass;
 };
 
 // II.22.33 Param : 0x08
@@ -797,12 +825,12 @@ struct PropertyTableRow {
 // II.22.35 PropertyMap : 0x15
 struct PropertyMapTableRow {
   // Parent (an index into the TypeDef table)
-  TableIndex Parent;
+  TableRowIndex Parent;
   // PropertyList (an index into the Property table). It marks the first of a contiguous run of Properties owned by Parent. The run continues to the smaller of:
   //  o the last row of the Property table
   //  o the next run of Properties, found by inspecting the PropertyList of the
   //    next row in this PropertyMap table
-  TableIndex PropertyList;
+  TableRowIndex PropertyList;
 };
 
 // II.22.36 StandAloneSig : 0x11
@@ -823,11 +851,11 @@ struct TypeDefTableRow {
   TypeDefOrRefCodedIndex Extends;
   // FieldList (an index into the Field table; it marks the first of a contiguous run of Fields owned by this Type). The run continues to the smaller of:
   //    o the last row of the Field table
-  TableIndex FieldList;
+  TableRowIndex FieldList;
   // MethodList (an index into the MethodDef table; it marks the first of a continguous
   //   run of Methods owned by this Type). The run continues to the smaller of:
-  //   o the last row of the MethodDef table
-  TableIndex MethodList;
+  //    o the last row of the MethodDef table
+  TableRowIndex MethodList;
 };
 
 // II.22.38 TypeRef : 0x01
@@ -849,23 +877,23 @@ struct TypeSpecTableRow {
 };
 
 struct FieldPointerTableRow {
-  TableIndex Field;
+  TableRowIndex Field;
 };
 
 struct MethodPointerTableRow {
-  TableIndex Method;
+  TableRowIndex Method;
 };
 
 struct ParamPointerTableRow {
-  TableIndex Param;
+  TableRowIndex Param;
 };
 
 struct EventPointerTableRow {
-  TableIndex Event;
+  TableRowIndex Event;
 };
 
 struct PropertyPointerTableRow {
-  TableIndex Property;
+  TableRowIndex Property;
 };
 
 template<class TRow>
@@ -880,15 +908,17 @@ struct Table {
     _rows.push_back(row);
   }
 
-  const TRow &GetRowAt(uint32_t i) const {
-    return _rows[i];
+  // Starts from 1
+  const TRow &GetRowAt(TableRowIndex i) const {
+    return _rows[i - 1];
   }
 
-  TRow &GetRowAt(uint32_t i) {
-    return _rows[i];
+  // Starts from 1
+  TRow &GetRowAt(TableRowIndex i) {
+    return _rows[i - 1];
   }
 
-  uint32_t GetRowsCount() const {
+  TableRowCount GetRowsCount() const {
     return _rows.size();
   }
 };
@@ -937,6 +967,30 @@ typedef Table<GenericParamTableRow> GenericParamTable;
 typedef Table<MethodSpecTableRow> MethodSpecTable;
 typedef Table<GenericParamConstraintTableRow> GenericParamConstraintTable;
 
+struct TypeDefOrRefOrSpecEncoded {
+  TypeDefOrRefOrSpecEncoded(uint32_t rawValue): _rawValue(rawValue) {}
+
+  TableIndex GetTableIndex() const {
+    switch (_rawValue & 0x3) {
+      case 0:
+        return TableIndexTypeDef;
+      case 1:
+        return TableIndexTypeRef;
+      case 2:
+        return TableIndexTypeSpec;
+      default:
+        throw "Unsupported";
+    }
+  }
+
+  TableRowIndex GetRowIndex() const {
+    return static_cast<TableRowIndex>(_rawValue >> 2);
+  }
+private:
+  uint32_t _rawValue;
+};
+
+
 struct Stream {
   uint32_t Offset;
   uint32_t Size;
@@ -947,7 +1001,7 @@ struct Stream {
 struct TableMeta {
   const uint8_t *data;
   uint32_t RowDataSize;
-  uint32_t RowsNum;
+  TableRowCount RowsNum;
   bool Valid;
   bool Sorted;
 };
@@ -1131,10 +1185,40 @@ struct Metadata {
     return TableHasRows(i) || TableHasRows(other...);
   }
 
+  template<class T>
+  const T GetBlob(BlobIndex i) const {
+    const auto &stream = GetStreamByName("#Blob");
+    return *(reinterpret_cast<const T *>(stream.Data + i));
+  }
+
+  template<class T>
+  const T GetBlobPointer(BlobIndex i) const {
+    const auto &stream = GetStreamByName("#Blob");
+    return reinterpret_cast<const T>(stream.Data + i);
+  }
+
   const char *GetString(StringIndex i) const;
+  TableRowIndex GetDeclaringType(TableRowIndex nestedTypeDefRowIndex) const;
+  const std::vector<TableRowIndex> &GetGenericParamsForType(TableRowIndex typeDefRowIndex) const;
+  const std::vector<TableRowIndex> &GetGenericParamsForMethod(TableRowIndex methodDefRowIndex) const;
+  const std::vector<TypeDefOrRefCodedIndex> &GetInterfaceImplsForType(TableRowIndex typeDefRowIndex) const;
+private:
+  void BuildGenericParamsCache();
+  void BuildDeclaringTypesCache();
+  void BuildInterfaceImplsCache();
 
 private:
+  bool _genericParamsCached {false};
+  bool _declaringTypesCached {false};
+  bool _interfaceImplsCached {false};
+
   std::map<StringIndex, std::string> _strings;
+  std::map<TableRowIndex, TableRowIndex> _declaringTypes;
+
+  using GenericParamsCache = std::map<TableRowIndex, std::vector<TableRowIndex>>;
+  GenericParamsCache _typeDefGenericParams;
+  GenericParamsCache _methodDefGenericParams;
+  std::map<TableRowIndex, std::vector<TypeDefOrRefCodedIndex>> _interfaceImpls;
 };
 
 struct MetadataReader: BinaryReader {
@@ -1167,7 +1251,7 @@ struct MetadataReader: BinaryReader {
   template<uint8_t bitNums, TableIndex... tableIndexes>
   uint32_t ReadCodedIndex(const std::integer_sequence<TableIndex, tableIndexes...> &) {
     TableRowCount maxCount = std::max({_metadata.GetTableRowsCount(tableIndexes)...});
-    return (maxCount << bitNums) < 65535 ? Read<uint16_t>() : Read<uint32_t>();
+    return (maxCount << bitNums) < 65536 ? Read<uint16_t>() : Read<uint32_t>();
   }
 
   template<class TCodedIndex>
@@ -1229,14 +1313,67 @@ struct MetadataReader: BinaryReader {
   }
 };
 
+struct BlobReader: BinaryReader {
+
+  explicit BlobReader(const uint8_t *data): BinaryReader(data) {}
+
+  int32_t ReadCompressedInt32() {
+    uint32_t unsignedValue = ReadCompressedUInt32();
+    uint32_t value = unsignedValue >> 1;
+    if ((unsignedValue & 0x1) == 0)
+      return static_cast<int32_t>(value);
+
+    if (value < 0x40)
+      return static_cast<int>(value - 0x40);
+
+    if (value < 0x2000)
+      return static_cast<int>(value - 0x2000);
+
+    if (value < 0x10000000)
+      return static_cast<int>(value - 0x10000000);
+
+    return static_cast<int>(value - 0x20000000);
+  }
+
+  uint32_t ReadCompressedUInt32(uint8_t *size = nullptr) {
+    auto _1stByte = Read<uint8_t>();
+    if ((_1stByte & 0x80) == 0) {
+      // 1 Byte
+      if (size != nullptr)
+        *size = 1;
+      // 0x00 ~ 0x7F
+      return static_cast<uint32_t>(_1stByte & 0x7F);
+    } else if ((_1stByte & 0xC0) == 0x80) {
+      // 2 Bytes
+      auto _2ndByte = Read<uint8_t>();
+      if (size != nullptr)
+        *size = 2;
+      // 0x0000 ~ 0x3FFF
+      return static_cast<uint32_t>((_1stByte & 0x3F)) << 8 | static_cast<uint32_t>(_2ndByte);
+    } else if ((_1stByte & 0xE0) == 0xC0) {
+      // 4 Bytes
+      auto _2ndByte = Read<uint8_t>();
+      auto _3rdByte = Read<uint8_t>();
+      auto _4thByte = Read<uint8_t>();
+
+      if (size != nullptr)
+        *size = 4;
+      // 0x00000000 ~ 0x1FFFFFFF
+      return (static_cast<uint32_t>(_1stByte & 0x1F) << 24) |
+        (static_cast<uint32_t>(_2ndByte) << 16) |
+        (static_cast<uint32_t>(_3rdByte) << 8) |
+        static_cast<uint32_t>(_4thByte);
+    } else {
+      throw "Not supported";
+    }
+  }
+};
+
 struct MetadataParser {
-
-  const MetadataHeader *_metadataHeader;
-
-  MetadataParser(const MetadataHeader *header): _metadataHeader(header) {}
-
-  Metadata Parse();
-  void ReadTables(Metadata &metadata, MetadataReader &metadataReader);
+public:
+  static Metadata *Parse(const MetadataHeader *metadataHeader);
+private:
+  static void ReadTables(Metadata *metadata, MetadataReader &metadataReader);
 
 };
 

@@ -7,4 +7,7 @@ add_executable(DotNetFileParser
         main.cpp
         metadata.cpp
         stream.cpp
-        models.cpp)
+        models.cpp
+        dotnet.cpp
+        dotnet.cpp
+        dotnet.h)

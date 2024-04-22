@@ -32,9 +32,9 @@ typedef struct MZHeader {
 } MZHeader;
 
 typedef struct COFFHeader {
-  uint32_t signature;
-  uint16_t machineCode;
-  uint16_t numberOfSections;
+  uint32_t signature; // 0x00
+  uint16_t machineCode; // 0x04
+  uint16_t numberOfSections;  // 0x06
   uint32_t timeStamp;
   uint32_t pointerToSymbolTable;
   uint32_t numberOfSymbolTable;
@@ -111,11 +111,11 @@ typedef struct DataDirectory {
 
 
 typedef struct Section {
-  char name[8];
-  uint32_t virtualSize;
-  uint32_t virtualAddress;
-  uint32_t sizeOfRawData;
-  uint32_t pointerToRawData;
+  char name[8]; // 0x0000
+  uint32_t virtualSize; // 0x0008
+  uint32_t virtualAddress; // 0x000C
+  uint32_t sizeOfRawData; // 0x00010
+  uint32_t pointerToRawData; // 0x0014
   uint32_t pointerToRelocations;
   uint32_t pointerToLinenumbers;
   uint16_t numberOfRelocations;
@@ -125,10 +125,10 @@ typedef struct Section {
 
 
 typedef struct CLRHeader {
-  uint32_t HeaderSize;
-  uint16_t MajorRuntimeVersion;
-  uint16_t MinorRuntimeVersion;
-  uint32_t MetaDataDirectoryAddress;
+  uint32_t HeaderSize; // 0x0
+  uint16_t MajorRuntimeVersion; // 0x4
+  uint16_t MinorRuntimeVersion; // 0x6
+  uint32_t MetaDataDirectoryAddress;  // 0x8
   uint32_t MetaDataDirectorySize;
   uint32_t Flags;
   uint32_t EntryPointToken;
@@ -173,13 +173,13 @@ typedef struct MetadataStreamHeader {
 } MetadataStreamHeader;
 
 typedef struct TableStreamHeader {
-  uint32_t Reserved1;
-  uint8_t MajorVersion;
-  uint8_t MinorVersion;
-  uint8_t HeapSizes;
-  uint8_t Reserved2;
-  uint64_t MaskValid;
-  uint64_t MaskSorted;
+  uint32_t Reserved1;   // 0x0
+  uint8_t MajorVersion; // 0x4
+  uint8_t MinorVersion; // 0x5
+  uint8_t HeapSizes;  // 0x6
+  uint8_t Reserved2;  // 0x7
+  uint64_t MaskValid; // 0x8
+  uint64_t MaskSorted;  // 0x10
 } TableStreamHeader;
 
 typedef struct ColumnOffsetSize {
@@ -237,11 +237,13 @@ typedef struct ColumnOffsetSize {
 #define MetadataTableFlagsMethodSpec    8796093022208
 #define MetadataTableFlagsGenericParamConstraint    17592186044416
 
-typedef uint32_t TableIndex;
-typedef uint32_t TableRowIndex;
+typedef int32_t TableIndex;
+typedef int32_t TableRowIndex;
 typedef uint32_t TableRowCount;
 
-const static TableIndex TableIndexInvalid = 0xFFFFFFF;
+const static TableIndex TableIndexInvalid = -1;
+const static TableRowIndex TableRowIndexInvalid = -1;
+const static TableRowIndex TableRowIndexStart = 1;
 
 const static TableIndex TableIndexModule = 0;
 const static TableIndex TableIndexTypeRef = 1;
@@ -337,7 +339,7 @@ const static uint32_t TagBitsMethodDefOrRef = 1;
 const static uint32_t TagBitsMemberForwarded = 1;
 const static uint32_t TagBitsImplementation = 2;
 const static uint32_t TagBitsCustomAttributeType = 3;
-const static uint32_t TagBitsResoulutionScope = 2;
+const static uint32_t TagBitsResolutionScope = 2;
 const static uint32_t TagBitsTypeOrMethodDef = 1;
 
 #endif //DOTNETFILEPARSER_COMMON_H
