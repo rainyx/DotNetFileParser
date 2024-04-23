@@ -20,13 +20,24 @@ namespace Models {
   struct TypeDefinition;
   struct ModelBuilder;
 
+  enum class TypeType {
+    Primitive,
+    Class,
+    Array,
+    GenericInstance,
+    GenericParameter,
+    Pointer
+  };
+
   struct IType {
     virtual ~IType() = default;
+    virtual TypeType GetType() const = 0;
   };
 
   template<class T>
   struct PrimitiveType: IType {
     using RawType = T;
+    TypeType GetType() const override { return TypeType::Primitive; };
     constexpr static uint8_t TypeSize = sizeof(RawType);
   };
 
@@ -50,6 +61,7 @@ namespace Models {
 
   struct ArrayType: IType {
   public:
+    TypeType GetType() const override { return TypeType::Array; };
     uint16_t GetRank() const { return _rank; }
     const IType *GetElementType() const { return _eleType; }
 
@@ -63,39 +75,22 @@ namespace Models {
   };
 
   // Class / ValueType / Enum
-  struct UserType: IType {
+  struct ClassType: IType {
   public:
+    TypeType GetType() const override { return TypeType::Class; };
     const ITypeDefinition *GetTypeDef() const { return _typeDef; }
 
   private:
     const ITypeDefinition *_typeDef;
-    explicit UserType(const ITypeDefinition *typeDef): _typeDef(typeDef) {}
+    explicit ClassType(const ITypeDefinition *typeDef): _typeDef(typeDef) {}
 
-    friend class ModelBuilder;
-  };
-
-  // System.Object
-  struct ObjectType: IType {
-
-  private:
-    friend class ModelBuilder;
-  };
-
-  // System.String
-  struct StringType: IType {
-  private:
-    friend class ModelBuilder;
-  };
-
-  // System.TypedByRef
-  struct TypedByRefType: IType {
-  private:
     friend class ModelBuilder;
   };
 
   struct GenericParameterType: IType {
   public:
     const char *GetName() const { return _name; }
+    TypeType GetType() const override { return TypeType::GenericParameter; };
   private:
     explicit GenericParameterType(const char *name): _name(name) {}
     const char *_name;
@@ -122,6 +117,7 @@ namespace Models {
   public:
     const std::vector<InflatedVariable> &GetInflatedVariables() const { return _inflatedVariables; }
     const ITypeDefinition *GetGenericClass() const { return _genericClass; }
+    TypeType GetType() const override { return TypeType::GenericInstance; };
 
   private:
     explicit GenericInstanceType(const ITypeDefinition *genericClass): _genericClass(genericClass) {}
@@ -134,6 +130,8 @@ namespace Models {
   struct PointerType: IType {
   public:
     const IType *GetPointeeType() const { return _pointeeType; }
+    TypeType GetType() const override { return TypeType::Pointer; };
+
   private:
     explicit PointerType(const IType *pointeeType): _pointeeType(pointeeType) {}
 
@@ -159,7 +157,7 @@ namespace Models {
     bool GetIsStatic() const { return _isStatic; }
 
   private:
-    TableRowIndex _index;
+    TableRowIndex _rowIndex;
     const char *_name;
     const IType *_type;
     bool _isStatic;
@@ -216,11 +214,12 @@ namespace Models {
   private:
     TableRowIndex _index;
     const char *_name;
-
+    uint _encodedMethodIndex;
     bool _isStatic;
     bool _isVirtual;
     bool _isFinal;
     bool _isAbstract;
+    bool _isGeneric;
 
     MemberAccess _access;
 
@@ -260,9 +259,8 @@ namespace Models {
 
   struct ITypeDefinition {
     virtual ~ITypeDefinition() = default;
-    virtual TableRowIndex GetIndex() const = 0;
-    virtual const char *GetTypeName() const = 0;
-    virtual const char *GetTypeNamespace() const = 0;
+    virtual const std::string &GetFullName() const = 0;
+    virtual const std::string &GetOrigFullName() const = 0;
     virtual const IAssembly *GetAssembly() const = 0;
     virtual bool GetIsValueType() const = 0;
     virtual const GenericContainer &GetGenericContainer() const = 0;
@@ -272,9 +270,8 @@ namespace Models {
 
   struct TypeDefinitionBase: ITypeDefinition {
     virtual ~TypeDefinitionBase() {}
-    TableRowIndex GetIndex() const override { return _index; }
-    const char *GetTypeName() const override { return _typeName; }
-    const char *GetTypeNamespace() const override { return _typeNamespace; }
+    const std::string &GetFullName() const override { return _fullName; }
+    const std::string &GetOrigFullName() const override { return _origFullName; };
     const IAssembly *GetAssembly() const override { return _assembly; }
     bool GetIsValueType() const override { return _isValueType; }
     const GenericContainer &GetGenericContainer() const override { return _genericContainer; }
@@ -282,13 +279,16 @@ namespace Models {
     bool GetIsGeneric() const override { return !GetGenericContainer().empty(); }
 
   private:
-    TableRowIndex _index {TableIndexInvalid};
+    TableRowIndex _rowIndex { TableIndexInvalid };
+    uint32_t _typeIndex { 0 };
     IAssembly *_assembly {nullptr};
-    const char *_typeName {nullptr};
-    const char *_typeNamespace {nullptr};
+    std::string _fullName;
+    std::string _origFullName;
     // Inherits from System.ValueType
     bool _isValueType {false};
+    bool _isEnum { false };
     const ITypeDefinition *_declaringType {nullptr};
+    const IType *_parent { nullptr };
 
     GenericContainer _genericContainer;
 
@@ -296,8 +296,8 @@ namespace Models {
   };
 
   struct TypeDefinitionRef: TypeDefinitionBase {
-    TypeDefinitionRef() {}
-    ~TypeDefinitionRef() {}
+    TypeDefinitionRef() = default;
+    ~TypeDefinitionRef() override = default;
   private:
     friend class ModelBuilder;
   };
@@ -365,36 +365,44 @@ namespace Models {
       const GenericContainer *methodContainer;
     };
 
-    ModelBuilder(const std::string &filePath);
+    explicit ModelBuilder(const std::string &filePath);
 
     void Build();
 
+    std::string GetTypeDefinitionFullName(TableRowIndex typeDefRowIndex, bool orig = false);
+    static std::string GetTypeRefFullName(const std::string &assemblyName, const std::string &typeNamespace, const std::string &typeName);
+
     // For main
-    const ITypeDefinition *GetTypeDefinitionFromCodedIndex(const TypeDefOrRefCodedIndex &codedIndex, const GenericContext &context = {});
-    const TypeDefinition *GetTypeDefinitionFromTypeDef(TableRowIndex typeDefRowIndex, const GenericContext &context = {});
-    const ITypeDefinition *GetTypeDefinitionFromTypeRef(TableRowIndex typeRefRowIndex, const GenericContext &context = {});
-    const ITypeDefinition *GetTypeDefinitionFromTypeSpec(TableRowIndex typeSpecRowIndex, const GenericContext &context = {});
+    const TypeDefinition *GetTypeDefinition(TableRowIndex typeDefRowIndex);
+    const ITypeDefinition *GetTypeDefinitionFromTypeRef(TableRowIndex typeRefRowIndex, bool decay);
+    const ITypeDefinition *GetTypeDefinitionFromTypeSpec(TableRowIndex typeSpecRowIndex, const GenericContext *context, bool decay);
 
-    const TypeDefinitionRef *GetTypeDefinitionRef(const AssemblyRef *assemblyRef, const ITypeDefinition *__nullable declaringType, const char *typeNamespace, const char *typeName);
+    static const TypeDefinitionRef *GetTypeDefinitionRef(const AssemblyRef *assemblyRef, const ITypeDefinition *__nullable declaringType, const char *typeNamespace, const char *typeName);
 
-    // with signature
-    IType *GetFieldType(BlobIndex signatureIndex, const GenericContext &context = {});
-
-    IType *GetTypeFromBlob(BlobReader &reader, const GenericContext &context = {});
-    IType *GetTypeFromCodedIndex(const TypeDefOrRefCodedIndex &codedIndex, const GenericContext &context = {});
-    IType *GetTypeFromTypeDef(TableRowIndex typeDefRowIndex, const GenericContext &context = {});
-    IType *GetTypeFromTypeRef(TableRowIndex typeRefRowIndex, const GenericContext &context = {});
-    IType *GetTypeFromTypeSpec(TableRowIndex typeSpecRowIndex, const GenericContext &context = {});
-    IType *GetTypeFromTypeDefOrRefOrSpecEncoded(const TypeDefOrRefOrSpecEncoded &encoded, const GenericContext &context = {});
+    IType *GetType(BlobReader &reader, const GenericContext *context, bool decay);
+    IType *GetType(const TypeDefOrRefCodedIndex &codedIndex, const GenericContext *__nullable context, bool decay);
+    IType *GetType(const TypeDefOrRefOrSpecEncoded &encoded, const GenericContext *__nullable context, bool decay);
+    IType *GetTypeFromTypeDef(TableRowIndex typeDefRowIndex, bool decay);
+    IType *GetTypeFromTypeRef(TableRowIndex typeRefRowIndex, bool decay);
+    IType *GetTypeFromTypeSpec(TableRowIndex typeSpecRowIndex, const GenericContext *__nullable context, bool decay);
 
     BlobReader GetBlobReader(BlobIndex index);
 
-    void GetGenericParametersForType(TableRowIndex typeDefRowIndex, GenericContainer &container, const Metadata *metadata);
-    void GetGenericParametersForMethod(TableRowIndex methodDefRowIndex, GenericContainer &container, const Metadata *metadata);
+    static void GetGenericParametersForType(TableRowIndex typeDefRowIndex, GenericContainer &container, const Metadata *metadata);
+    static void GetGenericParametersForMethod(TableRowIndex methodDefRowIndex, GenericContainer &container, const Metadata *metadata);
+
+    Field *GetField(TypeDefinition *typeDef, TableRowIndex fieldRowIndex);
+    Method *GetMethod(TypeDefinition *typeDef, TableRowIndex methodRowIndex);
+
   private:
     void PrepareAssemblyRef(TableRowIndex assemblyRowIndex, const Metadata *metadata);
     void PrepareTypeDefinitionRef(AssemblyRef *assemblyRef, TableRowIndex i, const Metadata *metadata);
-    bool IsValueType(TypeDefOrRefCodedIndex codedIndex, const Metadata *metadata);
+    static bool IsValueType(TypeDefOrRefCodedIndex codedIndex, const Metadata *metadata);
+
+    static int GetTypeDefTypeIndex(int typeDefIndex);
+    static uint GetMethodDefEncodedIndex(int methodDefIndex);
+    static uint EncodeHybridClrIndex(uint index);
+    static uint EncodeIndex(uint usage, uint index);
   private:
     const std::filesystem::path _filePath;
     std::filesystem::path _workingDirectory;
@@ -402,12 +410,34 @@ namespace Models {
     std::vector<const TypeDefinition *> _typeDefinitions;
     std::vector<const Method *> _methods;
 
-    Metadata *_mainMetadata;
-    DotNetFile *_mainDotNetFile;
+    Metadata *_mainMetadata { nullptr };
+    DotNetFile *_mainDotNetFile { nullptr };
     // for assembly refs.
     std::vector<AssemblyRef *> _assemblyRefs;
     std::vector<Metadata *> _refsMetadata;
     std::vector<DotNetFile *> _refsDotNetFile;
+
+    Assembly *_mainAssembly = { nullptr };
+
+    ClassType *_objectType { nullptr };
+    ClassType *_stringType { nullptr };
+    ClassType *_typedByRefType { nullptr };
+
+    Types::Void *_voidType { nullptr };
+    Types::Boolean *_booleanType { nullptr };
+    Types::Char *_charType { nullptr };
+    Types::U1 *_u1Type { nullptr };
+    Types::I1 *_i1Type { nullptr };
+    Types::U2 *_u2Type { nullptr };
+    Types::I2 *_i2Type { nullptr };
+    Types::U4 *_u4Type { nullptr };
+    Types::I4 *_i4Type { nullptr };
+    Types::U8 *_u8Type { nullptr };
+    Types::I8 *_i8Type { nullptr };
+    Types::R4 *_r4Type { nullptr };
+    Types::R8 *_r8Type { nullptr };
+    Types::I *_iType { nullptr };
+    Types::U *_uType { nullptr };
   };
 }
 

@@ -237,12 +237,12 @@ typedef struct ColumnOffsetSize {
 #define MetadataTableFlagsMethodSpec    8796093022208
 #define MetadataTableFlagsGenericParamConstraint    17592186044416
 
-typedef int32_t TableIndex;
-typedef int32_t TableRowIndex;
+typedef uint32_t TableIndex;
+typedef uint32_t TableRowIndex;
 typedef uint32_t TableRowCount;
 
-const static TableIndex TableIndexInvalid = -1;
-const static TableRowIndex TableRowIndexInvalid = -1;
+const static TableIndex TableIndexInvalid = 0xFFFFFFFF;
+const static TableRowIndex TableRowIndexInvalid = 0;
 const static TableRowIndex TableRowIndexStart = 1;
 
 const static TableIndex TableIndexModule = 0;

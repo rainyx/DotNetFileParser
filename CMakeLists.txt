@@ -10,4 +10,6 @@ add_executable(DotNetFileParser
         models.cpp
         dotnet.cpp
         dotnet.cpp
-        dotnet.h)
+        dotnet.h
+        utils.cpp
+)

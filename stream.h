@@ -20,8 +20,8 @@ public:
     return *ptr;
   }
 
-  const char *ReadNullTermString(uint32_t *readLen = nullptr) {
-    uint32_t oldBytesRead = _bytesRead;
+  const char *ReadNullTermString(int *readLen = nullptr) {
+    int oldBytesRead = _bytesRead;
     const char *origPtr = reinterpret_cast<const char *>(_data);
     do {
       char c = Read<char>();
@@ -36,11 +36,11 @@ public:
   }
 
   const uint8_t *GetData() const { return _data; }
-  uint32_t GetBytesRead() const { return _bytesRead; }
+  int GetBytesRead() const { return _bytesRead; }
 
 private:
   const uint8_t *_data;
-  uint32_t _bytesRead = 0;
+  int _bytesRead = 0;
 };
 
 

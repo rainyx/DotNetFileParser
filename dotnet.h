@@ -18,13 +18,13 @@
 
 struct PE {
 private:
-  const MZHeader *_mzHeader;
-  const PEHeader *_peHeader;
+  const MZHeader *_mzHeader { nullptr };
+  const PEHeader *_peHeader { nullptr };
 
   std::vector<Section> _sections;
   std::vector<DataDirectory> _directories;
 public:
-  PE(const MZHeader *mzHeader): _mzHeader(mzHeader) {
+  explicit PE(const MZHeader *mzHeader): _mzHeader(mzHeader) {
     ParseHeader();
   }
 
@@ -75,7 +75,7 @@ private:
 
     uint32_t numOfDirs = _peHeader->windowsSpecificHeader.numberOfRvaAndSizes;
     // read directory
-    const DataDirectory *dirs = reinterpret_cast<const DataDirectory *>(_peHeader + 1);
+    auto dirs = reinterpret_cast<const DataDirectory *>(_peHeader + 1);
 
     for (int i=0; i<numOfDirs; ++i) {
       const DataDirectory &dir = dirs[i];
@@ -84,7 +84,7 @@ private:
 
     // read sections
     uint32_t numOfSections = _peHeader->coffHeader.numberOfSections;
-    const Section *secs = reinterpret_cast<const Section *>(dirs + numOfDirs);
+    auto secs = reinterpret_cast<const Section *>(dirs + numOfDirs);
     for (int i=0; i<numOfSections; ++i) {
       const Section &sec = secs[i];
       _sections.push_back(sec);
@@ -96,13 +96,13 @@ private:
 struct DotNetFile {
 private:
   const std::string _filePath;
-  struct stat _fileInfo;
-  void *_fileData {nullptr};
-  const MetadataHeader *_metadataHeader;
-  const CLRHeader *_clrHeader;
+  struct stat _fileInfo { 0 };
+  void *_fileData { nullptr };
+  const MetadataHeader *_metadataHeader { nullptr };
+  const CLRHeader *_clrHeader { nullptr };
 
 public:
-  DotNetFile(const std::string &filePath): _filePath(filePath) {
+  explicit DotNetFile(const std::string &filePath): _filePath(filePath) {
     Parse();
   }
 
@@ -113,7 +113,7 @@ private:
   void Parse() {
     int fd = open(_filePath.c_str(), O_RDONLY);
     fstat(fd, &_fileInfo);
-    _fileData = mmap(NULL, _fileInfo.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    _fileData = mmap(nullptr, _fileInfo.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
 
     PE pe(reinterpret_cast<const MZHeader *>(_fileData));
 

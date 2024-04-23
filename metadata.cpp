@@ -11,6 +11,23 @@
 
 using namespace std;
 
+TableRowIndex Metadata::GetEnclosingType(TableRowIndex nestedTypeDefRowIndex) {
+  BuildNested2EnclosingCache();
+  if (_nested2Enclosing.find(nestedTypeDefRowIndex) == _nested2Enclosing.end())
+    return TableRowIndexInvalid;
+  return _nested2Enclosing.at(nestedTypeDefRowIndex);
+}
+
+void Metadata::BuildNested2EnclosingCache() {
+  if (_nested2EnclosingCached)
+    return;
+  _nested2EnclosingCached = true;
+  for (auto rowIndex = TableRowIndexStart; rowIndex <= GetTableRowsCount(TableIndexNestedClass); ++rowIndex) {
+    auto row = GetNestedClassTable().GetRowAt(rowIndex);
+    _nested2Enclosing.insert(std::make_pair(row.NestedClass, row.EnclosingClass));
+  }
+}
+
 const char *Metadata::GetString(StringIndex i) const {
   const Stream &stringStream = GetStreamByName("#Strings");
   return reinterpret_cast<const char *>(stringStream.Data) + i;
@@ -92,13 +109,13 @@ void Metadata::BuildInterfaceImplsCache() {
 }
 
 Metadata *MetadataParser::Parse(const MetadataHeader *metadataHeader) {
-  Metadata *metadata = new Metadata();
+  auto metadata = new Metadata();
 
 //  cout << _metadataHeader->Signature << endl;
 //  cout << _metadataHeader->NumberOfStreams << endl;
 
   uint32_t numOfStreams = metadataHeader->NumberOfStreams;
-  const StreamHeader *st = reinterpret_cast<const StreamHeader *>(metadataHeader + 1);
+  auto st = reinterpret_cast<const StreamHeader *>(metadataHeader + 1);
   for (int i=0; i<numOfStreams; ++i) {
     int nameLen = 0;
     BinaryReader nameReader(reinterpret_cast<const uint8_t*>(st + 1));
@@ -127,7 +144,7 @@ Metadata *MetadataParser::Parse(const MetadataHeader *metadataHeader) {
 
 //  cout << (int)tableHeader->MajorVersion << "." << (int)tableHeader->MinorVersion << endl;
 
-  const TableRowCount *tableRowsCount = reinterpret_cast<const TableRowCount *>(tableHeader + 1);
+  auto tableRowsCount = reinterpret_cast<const TableRowCount *>(tableHeader + 1);
 
   metadata->ResizeTableMetas(MetadataTableFlagsCount);
   int tablesCount = 0;
@@ -154,277 +171,277 @@ Metadata *MetadataParser::Parse(const MetadataHeader *metadataHeader) {
 void MetadataParser::ReadTables(Metadata *metadata, MetadataReader &metadataReader) {
   // Read Module table 0x0.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexModule); ++i) {
-    ModuleTableRow row;
+    ModuleTableRow row {};
     row.Generation = metadataReader.Read<uint16_t>();
     row.Name = metadataReader.ReadStringStreamIndex();
     row.Mvid = metadataReader.ReadGuidStreamIndex();
     row.EncId = metadataReader.ReadGuidStreamIndex();
     row.EncBaseId = metadataReader.ReadGuidStreamIndex();
-    metadata->GetModuleTable().AddRow(std::move(row));
+    metadata->GetModuleTable().AddRow(row);
   }
 
   // Read TypeRef table 0x1.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexTypeRef); ++i) {
-    TypeRefTableRow row;
+    TypeRefTableRow row {};
     // tables: Module, ModuleRef, AssemblyRef TypeRef
     row.ResolutionScope = metadataReader.ReadResolutionScopeCodedIndex();
     row.TypeName = metadataReader.ReadStringStreamIndex();
     row.TypeNamespace = metadataReader.ReadStringStreamIndex();
-    metadata->GetTypeRefTable().AddRow(std::move(row));
+    metadata->GetTypeRefTable().AddRow(row);
   }
 
   // Read TypeDef table 0x2.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexTypeDef); ++i) {
-    TypeDefTableRow row;
+    TypeDefTableRow row {};
     row.Flags = static_cast<TypeAttributes>(metadataReader.Read<uint32_t>());
     row.TypeName = metadataReader.ReadStringStreamIndex();
     row.TypeNamespace = metadataReader.ReadStringStreamIndex();
     // tables: TypeDef, TypeRef, TypeSpec
     row.Extends = metadataReader.ReadTypeDefOrRefCodedIndex();
-    row.FieldList = metadataReader.ReadTableIndex(TableIndexField);
-    row.MethodList = metadataReader.ReadTableIndex(TableIndexMethodDef);
-    metadata->GetTypeDefTable().AddRow(std::move(row));
+    row.FieldList = metadataReader.ReadTableRowIndex(TableIndexField);
+    row.MethodList = metadataReader.ReadTableRowIndex(TableIndexMethodDef);
+    metadata->GetTypeDefTable().AddRow(row);
   }
 
   // Read FieldPointer table 0x3.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexFieldPointer); ++i) {
-    FieldPointerTableRow row;
-    row.Field = metadataReader.ReadTableIndex(TableIndexField);
-    metadata->GetFieldPointerTable().AddRow(std::move(row));
+    FieldPointerTableRow row {};
+    row.Field = metadataReader.ReadTableRowIndex(TableIndexField);
+    metadata->GetFieldPointerTable().AddRow(row);
   }
 
   // Read Field table 0x4.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexField); ++i) {
-    FieldTableRow row;
+    FieldTableRow row {};
     row.Flags = static_cast<FieldAttributes>(metadataReader.Read<uint16_t>());
     row.Name = metadataReader.ReadStringStreamIndex();
     row.Signature = metadataReader.ReadBlobStreamIndex();
-    metadata->GetFieldTable().AddRow(std::move(row));
+    metadata->GetFieldTable().AddRow(row);
   }
 
   // Read MethodPointer table 0x5.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexMethodPointer); ++i) {
-    MethodPointerTableRow row;
-    row.Method = metadataReader.ReadTableIndex(TableIndexMethodDef);
-    metadata->GetMethodPointerTable().AddRow(std::move(row));
+    MethodPointerTableRow row {};
+    row.Method = metadataReader.ReadTableRowIndex(TableIndexMethodDef);
+    metadata->GetMethodPointerTable().AddRow(row);
   }
 
   // Read MethodDef table 0x6.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexMethodDef); ++i) {
-    MethodDefTableRow row;
+    MethodDefTableRow row {};
     row.RVA = metadataReader.Read<uint32_t>();
     row.ImplFlags = static_cast<MethodImplAttributes>(metadataReader.Read<uint16_t>());
     row.Flags = static_cast<MethodAttributes>(metadataReader.Read<uint16_t>());
     row.Name = metadataReader.ReadStringStreamIndex();
     row.Signature = metadataReader.ReadBlobStreamIndex();
-    row.ParamList = metadataReader.ReadTableIndex(TableIndexParam);
-    metadata->GetMethodDefTable().AddRow(std::move(row));
+    row.ParamList = metadataReader.ReadTableRowIndex(TableIndexParam);
+    metadata->GetMethodDefTable().AddRow(row);
   }
 
   // Read ParamPointer table 0x7.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexParamPointer); ++i) {
-    ParamPointerTableRow row;
-    row.Param = metadataReader.ReadTableIndex(TableIndexParam);
-    metadata->GetParamPointerTable().AddRow(std::move(row));
+    ParamPointerTableRow row {};
+    row.Param = metadataReader.ReadTableRowIndex(TableIndexParam);
+    metadata->GetParamPointerTable().AddRow(row);
   }
 
   // Read Param table 0x8.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexParam); ++i) {
-    ParamTableRow row;
+    ParamTableRow row {};
     row.Flags = static_cast<ParamAttributes>(metadataReader.Read<uint16_t>());
     row.Sequence = metadataReader.Read<uint16_t>();
     row.Name = metadataReader.ReadStringStreamIndex();
-    metadata->GetParamTable().AddRow(std::move(row));
+    metadata->GetParamTable().AddRow(row);
   }
 
   // Read InterfaceImpl table 0x9.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexInterfaceImpl); ++i) {
-    InterfaceImplTableRow row;
-    row.Class = metadataReader.ReadTableIndex(TableIndexTypeDef);
+    InterfaceImplTableRow row {};
+    row.Class = metadataReader.ReadTableRowIndex(TableIndexTypeDef);
     // tables: TypeDef, TypeRef, TypeSpec
     row.Interface = metadataReader.ReadTypeDefOrRefCodedIndex();
-    metadata->GetInterfaceImplTable().AddRow(std::move(row));
+    metadata->GetInterfaceImplTable().AddRow(row);
   }
 
   // Read MemberRef table 0xA.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexMemberRef); ++i) {
-    MemberRefTableRow row;
+    MemberRefTableRow row {};
     // tables: MethodDef, ModuleRef,TypeDef, TypeRef, TypeSpec
     row.Class = metadataReader.ReadMemberRefParentCodedIndex();
     row.Name = metadataReader.ReadStringStreamIndex();
     row.Signature = metadataReader.ReadBlobStreamIndex();
-    metadata->GetMemberRefTable().AddRow(std::move(row));
+    metadata->GetMemberRefTable().AddRow(row);
   }
 
   // Read Constant table 0xB.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexConstant); ++i) {
-    ConstantTableRow row;
+    ConstantTableRow row {};
     row.Type = metadataReader.Read<uint16_t>();
     // tables: Field, Property
     row.Parent = metadataReader.ReadHasConstantCodedIndex();
     row.Value = metadataReader.ReadBlobStreamIndex();
-    metadata->GetConstantTable().AddRow(std::move(row));
+    metadata->GetConstantTable().AddRow(row);
   }
 
   // Read CustomAttribute table 0xC.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexCustomAttribute); ++i) {
-    CustomAttributeTableRow row;
+    CustomAttributeTableRow row {};
     row.Parent = metadataReader.ReadHasCustomAttributeCodedIndex();
     // table: MethodDef, MemberRef
     row.Type = metadataReader.ReadCustomAttributeTypeCodedIndex();
     row.Value = metadataReader.ReadBlobStreamIndex();
-    metadata->GetCustomAttributeTable().AddRow(std::move(row));
+    metadata->GetCustomAttributeTable().AddRow(row);
   }
 
   // Read FieldMarshal table 0xD.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexFieldMarshal); ++i) {
-    FieldMarshalTableRow row;
+    FieldMarshalTableRow row {};
     // tables: Field, Param
     row.Parent = metadataReader.ReadHasFieldMarshallCodedIndex();
     row.NativeType = metadataReader.ReadBlobStreamIndex();
-    metadata->GetFieldMarshalTable().AddRow(std::move(row));
+    metadata->GetFieldMarshalTable().AddRow(row);
   }
 
   // Read DeclSecurity table 0xE.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexDeclSecurity); ++i) {
-    DeclSecurityTableRow row;
+    DeclSecurityTableRow row {};
     row.Action = metadataReader.Read<uint16_t>();
     // tables: TypeDef, MethodDef, Assembly
     row.Parent = metadataReader.ReadHasDeclSecurityCodedIndex();
     row.PermissionSet = metadataReader.ReadBlobStreamIndex();
-    metadata->GetDeclSecurityTable().AddRow(std::move(row));
+    metadata->GetDeclSecurityTable().AddRow(row);
   }
 
   // Read ClassLayout table 0xF.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexClassLayout); ++i) {
-    ClassLayoutTableRow row;
+    ClassLayoutTableRow row {};
     row.PackingSize = metadataReader.Read<uint16_t>();
     row.ClassSize = metadataReader.Read<uint32_t>();
-    row.Parent = metadataReader.ReadTableIndex(TableIndexTypeDef);
-    metadata->GetClassLayoutTable().AddRow(std::move(row));
+    row.Parent = metadataReader.ReadTableRowIndex(TableIndexTypeDef);
+    metadata->GetClassLayoutTable().AddRow(row);
   }
 
   // Read FieldLayout table 0x10.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexFieldLayout); ++i) {
-    FieldLayoutTableRow row;
+    FieldLayoutTableRow row {};
     row.Offset = metadataReader.Read<uint32_t>();
-    row.Field = metadataReader.ReadTableIndex(TableIndexField);
-    metadata->GetFieldLayoutTable().AddRow(std::move(row));
+    row.Field = metadataReader.ReadTableRowIndex(TableIndexField);
+    metadata->GetFieldLayoutTable().AddRow(row);
   }
 
   // Read StandAloneSig table 0x11.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexStandAloneSig); ++i) {
-    StandAloneSigTableRow row;
+    StandAloneSigTableRow row {};
     row.Signature = metadataReader.ReadBlobStreamIndex();
-    metadata->GetStandAloneSigTable().AddRow(std::move(row));
+    metadata->GetStandAloneSigTable().AddRow(row);
   }
 
   // Read EventMap table 0x12.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexEventMap); ++i) {
-    EventMapTableRow row;
-    row.Parent = metadataReader.ReadTableIndex(TableIndexTypeDef);
-    row.EventList = metadataReader.ReadTableIndex(TableIndexEvent);
-    metadata->GetEventMapTable().AddRow(std::move(row));
+    EventMapTableRow row {};
+    row.Parent = metadataReader.ReadTableRowIndex(TableIndexTypeDef);
+    row.EventList = metadataReader.ReadTableRowIndex(TableIndexEvent);
+    metadata->GetEventMapTable().AddRow(row);
   }
 
   // Read EventPointer table 0x13.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexEventPointer); ++i) {
-    EventPointerTableRow row;
-    row.Event = metadataReader.ReadTableIndex(TableIndexEvent);
-    metadata->GetEventPointerTable().AddRow(std::move(row));
+    EventPointerTableRow row {};
+    row.Event = metadataReader.ReadTableRowIndex(TableIndexEvent);
+    metadata->GetEventPointerTable().AddRow(row);
   }
 
   // Read Event table 0x14.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexEvent); ++i) {
-    EventTableRow row;
+    EventTableRow row {};
     row.EventFlags = static_cast<EventAttributes>(metadataReader.Read<uint16_t>());
     row.Name = metadataReader.ReadStringStreamIndex();
     // tables: TypeDef, a TypeRef, TypeSpec
     row.EventType = metadataReader.ReadTypeDefOrRefCodedIndex();
-    metadata->GetEventTable().AddRow(std::move(row));
+    metadata->GetEventTable().AddRow(row);
   }
 
   // Read PropertyMap table 0x15.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexPropertyMap); ++i) {
-    PropertyMapTableRow row;
-    row.Parent = metadataReader.ReadTableIndex(TableIndexTypeDef);
-    row.PropertyList = metadataReader.ReadTableIndex(TableIndexProperty);
-    metadata->GetPropertyMapTable().AddRow(std::move(row));
+    PropertyMapTableRow row {};
+    row.Parent = metadataReader.ReadTableRowIndex(TableIndexTypeDef);
+    row.PropertyList = metadataReader.ReadTableRowIndex(TableIndexProperty);
+    metadata->GetPropertyMapTable().AddRow(row);
   }
 
   // Read PropertyPointer table 0x16.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexPropertyPointer); ++i) {
-    PropertyPointerTableRow row;
-    row.Property = metadataReader.ReadTableIndex(TableIndexProperty);
-    metadata->GetPropertyPointerTable().AddRow(std::move(row));
+    PropertyPointerTableRow row {};
+    row.Property = metadataReader.ReadTableRowIndex(TableIndexProperty);
+    metadata->GetPropertyPointerTable().AddRow(row);
   }
 
   // Read Property table 0x17.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexProperty); ++i) {
-    PropertyTableRow row;
+    PropertyTableRow row {};
     row.Flags = static_cast<PropertyAttributes>(metadataReader.Read<uint16_t>());
     row.Name = metadataReader.ReadStringStreamIndex();
     row.Type = metadataReader.ReadBlobStreamIndex();
-    metadata->GetPropertyTable().AddRow(std::move(row));
+    metadata->GetPropertyTable().AddRow(row);
   }
 
   // Read MethodSemantics table 0x18.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexMethodSemantics); ++i) {
-    MethodSemanticsTableRow row;
+    MethodSemanticsTableRow row {};
     row.Semantics = metadataReader.Read<uint16_t>();
-    row.Method = metadataReader.ReadTableIndex(TableIndexMethodDef);
+    row.Method = metadataReader.ReadTableRowIndex(TableIndexMethodDef);
     // tables: Event, Property
     row.Association = metadataReader.ReadHasSemanticsCodedIndex();
-    metadata->GetMethodSemanticsTable().AddRow(std::move(row));
+    metadata->GetMethodSemanticsTable().AddRow(row);
   }
 
   // Read MethodImpl table 0x19.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexMethodImpl); ++i) {
-    MethodImplTableRow row;
-    row.Class = metadataReader.ReadTableIndex(TableIndexTypeDef);
+    MethodImplTableRow row {};
+    row.Class = metadataReader.ReadTableRowIndex(TableIndexTypeDef);
     // tables: MethodDef, MemberRef
     row.MethodBody = metadataReader.ReadMethodDefOrRefCodedIndex();
     // tables: MethodDef, MemberRef
     row.MethodDeclaration = metadataReader.ReadMethodDefOrRefCodedIndex();
-    metadata->GetMethodImplTable().AddRow(std::move(row));
+    metadata->GetMethodImplTable().AddRow(row);
   }
 
   // Read ModuleRef table 0x1A.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexModuleRef); ++i) {
-    ModuleRefTableRow row;
+    ModuleRefTableRow row {};
     row.Name = metadataReader.ReadStringStreamIndex();
-    metadata->GetModuleRefTable().AddRow(std::move(row));
+    metadata->GetModuleRefTable().AddRow(row);
   }
 
   // Read TypeSpec table 0x1B.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexTypeSpec); ++i) {
-    TypeSpecTableRow row;
+    TypeSpecTableRow row {};
     row.Signature = metadataReader.ReadBlobStreamIndex();
-    metadata->GetTypeSpecTable().AddRow(std::move(row));
+    metadata->GetTypeSpecTable().AddRow(row);
   }
 
   // Read ImplMap table 0x1C.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexImplMap); ++i) {
-    ImplMapTableRow row;
+    ImplMapTableRow row {};
     row.MappingFlags = static_cast<PInvokeAttributes>(metadataReader.Read<uint16_t>());
     // tables: Field, MethodDef
     row.MemberForwarded = metadataReader.ReadMemberForwardedCodedIndex();
     row.ImportName = metadataReader.ReadStringStreamIndex();
-    row.ImportScope = metadataReader.ReadTableIndex(TableIndexModuleRef);
-    metadata->GetImplMapTable().AddRow(std::move(row));
+    row.ImportScope = metadataReader.ReadTableRowIndex(TableIndexModuleRef);
+    metadata->GetImplMapTable().AddRow(row);
   }
 
   // Read FieldRVA table 0x1D.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexFieldRVA); ++i) {
-    FieldRVATableRow row;
+    FieldRVATableRow row {};
     row.RVA = metadataReader.Read<uint32_t>();
-    row.Field = metadataReader.ReadTableIndex(TableIndexField);
-    metadata->GetFieldRVATable().AddRow(std::move(row));
+    row.Field = metadataReader.ReadTableRowIndex(TableIndexField);
+    metadata->GetFieldRVATable().AddRow(row);
   }
 
   // Read Assembly table 0x20.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexAssembly); ++i) {
-    AssemblyTableRow row;
+    AssemblyTableRow row {};
     row.HashAlgId = metadataReader.Read<uint32_t>();
     row.MajorVersion = metadataReader.Read<uint16_t>();
     row.MinorVersion = metadataReader.Read<uint16_t>();
@@ -434,28 +451,28 @@ void MetadataParser::ReadTables(Metadata *metadata, MetadataReader &metadataRead
     row.PublicKey = metadataReader.ReadBlobStreamIndex();
     row.Name = metadataReader.ReadStringStreamIndex();
     row.Culture = metadataReader.ReadStringStreamIndex();
-    metadata->GetAssemblyTable().AddRow(std::move(row));
+    metadata->GetAssemblyTable().AddRow(row);
   }
 
   // Read AssemblyProcessor table 0x21.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexAssemblyProcessor); ++i) {
-    AssemblyProcessorTableRow row;
+    AssemblyProcessorTableRow row {};
     row.Processor = metadataReader.Read<uint32_t>();
-    metadata->GetAssemblyProcessorTable().AddRow(std::move(row));
+    metadata->GetAssemblyProcessorTable().AddRow(row);
   }
 
   // Read AssemblyOS table 0x22.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexAssemblyOS); ++i) {
-    AssemblyOSTableRow row;
+    AssemblyOSTableRow row {};
     row.OSPlatformId = metadataReader.Read<uint32_t>();
     row.OSMajorVersion = metadataReader.Read<uint32_t>();
     row.OSMinorVersion = metadataReader.Read<uint32_t>();
-    metadata->GetAssemblyOSTable().AddRow(std::move(row));
+    metadata->GetAssemblyOSTable().AddRow(row);
   }
 
   // Read AssemblyRef table 0x23.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexAssemblyRef); ++i) {
-    AssemblyRefTableRow row;
+    AssemblyRefTableRow row {};
     row.MajorVersion = metadataReader.Read<uint16_t>();
     row.MinorVersion = metadataReader.Read<uint16_t>();
     row.BuildNumber = metadataReader.Read<uint16_t>();
@@ -465,93 +482,93 @@ void MetadataParser::ReadTables(Metadata *metadata, MetadataReader &metadataRead
     row.Name = metadataReader.ReadStringStreamIndex();
     row.Culture = metadataReader.ReadStringStreamIndex();
     row.HashValue = metadataReader.ReadBlobStreamIndex();
-    metadata->GetAssemblyRefTable().AddRow(std::move(row));
+    metadata->GetAssemblyRefTable().AddRow(row);
   }
 
   // Read AssemblyRefProcessor table 0x24.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexAssemblyRefProcessor); ++i) {
-    AssemblyRefProcessorTableRow row;
+    AssemblyRefProcessorTableRow row {};
     row.Processor = metadataReader.Read<uint32_t>();
-    row.AssemblyRef = metadataReader.ReadTableIndex(TableIndexAssemblyRef);
-    metadata->GetAssemblyRefProcessorTable().AddRow(std::move(row));
+    row.AssemblyRef = metadataReader.ReadTableRowIndex(TableIndexAssemblyRef);
+    metadata->GetAssemblyRefProcessorTable().AddRow(row);
   }
 
   // Read AssemblyRefOS table 0x25.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexAssemblyRefOS); ++i) {
-    AssemblyRefOSTableRow row;
+    AssemblyRefOSTableRow row {};
     row.OSPlatformId = metadataReader.Read<uint32_t>();
     row.OSMajorVersion = metadataReader.Read<uint32_t>();
     row.OSMinorVersion = metadataReader.Read<uint32_t>();
-    row.AssemblyRef = metadataReader.ReadTableIndex(TableIndexAssemblyRef);
-    metadata->GetAssemblyRefOSTable().AddRow(std::move(row));
+    row.AssemblyRef = metadataReader.ReadTableRowIndex(TableIndexAssemblyRef);
+    metadata->GetAssemblyRefOSTable().AddRow(row);
   }
 
   // Read File table 0x26.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexFile); ++i) {
-    FileTableRow row;
+    FileTableRow row {};
     row.Flags = static_cast<FileAttributes>(metadataReader.Read<uint32_t>());
     row.Name = metadataReader.ReadStringStreamIndex();
     row.HashValue = metadataReader.ReadBlobStreamIndex();
-    metadata->GetFileTable().AddRow(std::move(row));
+    metadata->GetFileTable().AddRow(row);
   }
 
   // Read ExportedType table 0x27.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexExportedType); ++i) {
-    ExportedTypeTableRow row;
+    ExportedTypeTableRow row {};
     row.Flags = static_cast<TypeAttributes>(metadataReader.Read<uint32_t>());
-    row.TypeDefId = metadataReader.ReadTableIndex(TableIndexTypeDef);
+    row.TypeDefId = metadataReader.ReadTableRowIndex(TableIndexTypeDef);
     row.TypeName = metadataReader.ReadStringStreamIndex();
     row.TypeNamespace = metadataReader.ReadStringStreamIndex();
     // tables: File, ExportedType, AssemblyRef
     row.Implementation = metadataReader.ReadImplementationCodedIndex();
-    metadata->GetExportedTypeTable().AddRow(std::move(row));
+    metadata->GetExportedTypeTable().AddRow(row);
   }
 
   // Read ManifestResource table 0x28.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexManifestResource); ++i) {
-    ManifestResourceTableRow row;
+    ManifestResourceTableRow row {};
     row.Offset = metadataReader.Read<uint32_t>();
     row.Flags = static_cast<ManifestResourceAttributes>(metadataReader.Read<uint32_t>());
     row.Name = metadataReader.ReadStringStreamIndex();
     // conflict implementation. tables: File, AssemblyRef
     row.Implementation = metadataReader.ReadImplementationCodedIndex();
-    metadata->GetManifestResourceTable().AddRow(std::move(row));
+    metadata->GetManifestResourceTable().AddRow(row);
   }
 
   // Read NestedClass table 0x29.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexNestedClass); ++i) {
-    NestedClassTableRow row;
-    row.NestedClass = metadataReader.ReadTableIndex(TableIndexTypeDef);
-    row.EnclosingClass = metadataReader.ReadTableIndex(TableIndexTypeDef);
-    metadata->GetNestedClassTable().AddRow(std::move(row));
+    NestedClassTableRow row {};
+    row.NestedClass = metadataReader.ReadTableRowIndex(TableIndexTypeDef);
+    row.EnclosingClass = metadataReader.ReadTableRowIndex(TableIndexTypeDef);
+    metadata->GetNestedClassTable().AddRow(row);
   }
 
   // Read GenericParam table 0x2A.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexGenericParam); ++i) {
-    GenericParamTableRow row;
+    GenericParamTableRow row {};
     row.Number = metadataReader.Read<uint16_t>();
     row.Flags = static_cast<GenericParamAttributes>(metadataReader.Read<uint16_t>());
     // tables: TypeDef, MethodDef
     row.Owner = metadataReader.ReadTypeOrMethodDefCodedIndex();
     row.Name = metadataReader.ReadStringStreamIndex();
-    metadata->GetGenericParamTable().AddRow(std::move(row));
+    metadata->GetGenericParamTable().AddRow(row);
   }
 
   // Read MethodSpec table 0x2B.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexMethodSpec); ++i) {
-    MethodSpecTableRow row;
+    MethodSpecTableRow row {};
     // tables: MethodDef, MemberRef
     row.Method = metadataReader.ReadMethodDefOrRefCodedIndex();
     row.Instantiation = metadataReader.ReadBlobStreamIndex();
-    metadata->GetMethodSpecTable().AddRow(std::move(row));
+    metadata->GetMethodSpecTable().AddRow(row);
   }
 
   // Read GenericParamConstraint table 0x2C.
   for (int i=0; i<metadata->GetTableRowsCount(TableIndexGenericParamConstraint); ++i) {
-    GenericParamConstraintTableRow row;
-    row.Owner = metadataReader.ReadTableIndex(TableIndexGenericParam);
+    GenericParamConstraintTableRow row {};
+    row.Owner = metadataReader.ReadTableRowIndex(TableIndexGenericParam);
     // tables: TableDef, TypeRef, TypeSpec
     row.Constraint = metadataReader.ReadTypeDefOrRefCodedIndex();
-    metadata->GetGenericParamConstraintTable().AddRow(std::move(row));
+    metadata->GetGenericParamConstraintTable().AddRow(row);
   }
 }

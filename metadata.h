@@ -52,14 +52,14 @@ public:
   const static uint8_t BitsNum = bitsNum;
   constexpr static auto TableIndexes = std::integer_sequence<TableIndex, tableIndexes...>();
 
-  CodedIndex(uint32_t codedIndex): _codedIndex(codedIndex) {};
+  explicit CodedIndex(uint32_t codedIndex): _codedIndex(codedIndex) {};
   CodedIndex(): _codedIndex(0) {};
 
   TableIndex GetTableIndex() const {
     return MatchTableIndex(0, tableIndexes...);
   }
 
-  int GetRowIndex() const {
+  TableRowIndex GetRowIndex() const {
     return _codedIndex >> bitsNum;
   }
 
@@ -1202,15 +1202,20 @@ struct Metadata {
   const std::vector<TableRowIndex> &GetGenericParamsForType(TableRowIndex typeDefRowIndex) const;
   const std::vector<TableRowIndex> &GetGenericParamsForMethod(TableRowIndex methodDefRowIndex) const;
   const std::vector<TypeDefOrRefCodedIndex> &GetInterfaceImplsForType(TableRowIndex typeDefRowIndex) const;
+
+  TableRowIndex GetEnclosingType(TableRowIndex nestedTypeDefRowIndex);
+
 private:
+  void BuildNested2EnclosingCache();
   void BuildGenericParamsCache();
   void BuildDeclaringTypesCache();
   void BuildInterfaceImplsCache();
 
 private:
-  bool _genericParamsCached {false};
-  bool _declaringTypesCached {false};
-  bool _interfaceImplsCached {false};
+  bool _genericParamsCached       { false };
+  bool _declaringTypesCached      { false };
+  bool _interfaceImplsCached      { false };
+  bool _nested2EnclosingCached    { false };
 
   std::map<StringIndex, std::string> _strings;
   std::map<TableRowIndex, TableRowIndex> _declaringTypes;
@@ -1219,6 +1224,7 @@ private:
   GenericParamsCache _typeDefGenericParams;
   GenericParamsCache _methodDefGenericParams;
   std::map<TableRowIndex, std::vector<TypeDefOrRefCodedIndex>> _interfaceImpls;
+  std::map<TableRowIndex, TableRowIndex> _nested2Enclosing;
 };
 
 struct MetadataReader: BinaryReader {
@@ -1244,7 +1250,7 @@ struct MetadataReader: BinaryReader {
     return (_streamOffsetSizeFlags & flag) != 0 ? Read<uint32_t>() : Read<uint16_t>();
   }
 
-  uint32_t ReadTableIndex(TableIndex i) {
+  TableRowIndex ReadTableRowIndex(TableIndex i) {
     return _metadata.GetTableRowsCount(i) < 65536 ? Read<uint16_t>() : Read<uint32_t>();
   }
 
